@@ -17,9 +17,9 @@ enum NewNotification {
 async fn accept_connection(
     peer: SocketAddr,
     stream: TcpStream,
-    new_server_request_data_tx: Sender<NewNotification>,
+    new_server_notification_data_tx: Sender<NewNotification>,
 ) {
-    if let Err(e) = handle_connection(peer, stream, new_server_request_data_tx).await {
+    if let Err(e) = handle_connection(peer, stream, new_server_notification_data_tx).await {
         match e {
             Error::ConnectionClosed | Error::Protocol(_) | Error::Utf8 => (),
             err => error!("Error processing connection: {}", err),
@@ -30,11 +30,11 @@ async fn accept_connection(
 async fn handle_connection(
     peer: SocketAddr,
     stream: TcpStream,
-    new_server_request_data_tx: Sender<NewNotification>,
+    new_server_notification_data_tx: Sender<NewNotification>,
 ) -> Result<()> {
     let ws_stream = accept_async(stream).await.expect("Failed to accept");
     let (sender, mut receiver) = ws_stream.split();
-    new_server_request_data_tx
+    new_server_notification_data_tx
         .send(NewNotification::NewClient((peer, sender)))
         .await
         .expect("to be able to send to the channel");
@@ -44,7 +44,7 @@ async fn handle_connection(
         let msg = msg?;
         if msg.is_text() || msg.is_binary() {
             // let response = sender.send(Message::Text(msg.to_string())).await;
-            new_server_request_data_tx
+            new_server_notification_data_tx
                 .send(NewNotification::NewMessage((peer, msg.to_string())))
                 .await
                 .expect("to be able to send to the channel ");
@@ -78,11 +78,11 @@ async fn run() {
     }
 }
 
-async fn listen_new_messages(new_server_request_data_rx: Receiver<NewNotification>) {
+async fn listen_new_messages(new_server_notification_data_rx: Receiver<NewNotification>) {
     let mut connected_clients: Vec<(SocketAddr, SplitSink<WebSocketStream<TcpStream>, Message>)> =
         vec![];
     loop {
-        if let Ok(result) = new_server_request_data_rx.recv().await {
+        if let Ok(result) = new_server_notification_data_rx.recv().await {
             match result {
                 NewNotification::NewClient(new_client) => connected_clients.push(new_client),
                 NewNotification::NewMessage((peer, new_msg)) => {
